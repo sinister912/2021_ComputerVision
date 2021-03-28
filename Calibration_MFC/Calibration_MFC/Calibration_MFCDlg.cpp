@@ -68,6 +68,8 @@ BEGIN_MESSAGE_MAP(CCalibrationMFCDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_LOAD, &CCalibrationMFCDlg::OnBnClickedButtonLoad)
 	ON_BN_CLICKED(IDC_BUTTON_DIST, &CCalibrationMFCDlg::OnBnClickedButtonDist)
 	ON_BN_CLICKED(IDC_BUTTON_SAVE, &CCalibrationMFCDlg::OnBnClickedButtonSave)
+	ON_BN_CLICKED(IDC_BUTTON_CALIB, &CCalibrationMFCDlg::OnBnClickedButtonCalib)
+	ON_BN_CLICKED(IDC_BUTTON_UNDIST, &CCalibrationMFCDlg::OnBnClickedButtonUndist)
 END_MESSAGE_MAP()
 
 
@@ -167,21 +169,30 @@ void CCalibrationMFCDlg::OnBnClickedButtonLoad()
 	if (dlg.DoModal() == IDOK)
 	{
 		strC = dlg.GetPathName();
-		CStringA strA(strC);	
+		if (strC.GetBuffer() == NULL)
+			return;
+		CStringA strA(strC);
 		m_strPath = strA;
 		Mat mat;
-		m_imgLoad = imread((string)strA, COLOR_BGR2GRAY);
+		m_imgLoad = imread((string)strA);
+
+		cout << strA << endl;
 		if (m_imgLoad.data == NULL)
 		{
 			cout << "no data!!" << endl;
 			CV_Assert(m_imgLoad.data);
-		}
-		m_imgLoad.convertTo(m_imgLoad, CV_8U);
+		}		
+		cvtColor(m_imgLoad, m_imgLoad, COLOR_BGR2GRAY);
+		m_imgLoad.convertTo(m_imgLoad, CV_8UC1);
 		CRect rect;
 		GetDlgItem(IDC_PIC_LEFT)->GetClientRect(&rect);
 		CDC* pDC;
 		pDC = GetDlgItem(IDC_PIC_LEFT)->GetDC();
 		DisplayImage(pDC, rect, m_imgLoad);
+		cout << "불러온 이미지 데이터" << endl
+			<< "cols: " << m_imgLoad.cols << endl
+			<< "rows: " << m_imgLoad.rows << endl
+			<< "type: " << m_imgLoad.type() << endl;
 	}
 
 
@@ -191,24 +202,31 @@ void CCalibrationMFCDlg::OnBnClickedButtonDist()
 {
 	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
 	Mat outimg(m_imgLoad.rows, m_imgLoad.cols, CV_8UC1, Scalar(0));
-	CString sK1, sK2, sK3;
-	double fK1, fK2, fK3;
+	CString sK0, sK1, sK2, sK3;
+	float fK0, fK1, fK2, fK3;
+	GetDlgItemText(IDC_EDIT_K0, sK0);
 	GetDlgItemText(IDC_EDIT_K1, sK1);
 	GetDlgItemText(IDC_EDIT_K2, sK2);
 	GetDlgItemText(IDC_EDIT_K3, sK3);
-	CStringA aK1(sK1), aK2(sK2), aK3(sK3);
-	fK1 = atof(aK1);
-	fK2 = atof(aK2);
-	fK3 = atof(aK3);
-	UndistortImg(fK1, fK2, fK3, m_imgLoad, outimg, m_imgLoad.cols, m_imgLoad.rows);
+	CStringA aK0(sK0), aK1(sK1), aK2(sK2), aK3(sK3);
+	fK0 = (float)atof(aK0);
+	fK1 = (float)atof(aK1);
+	fK2 = (float)atof(aK2);
+	fK3 = (float)atof(aK3);
+	DistortImg(fK0, fK1, fK2, fK3, m_imgLoad, outimg, m_imgLoad.cols, m_imgLoad.rows);
+
+	//Mat img;
+	//resize(outimg, img, Size(800, 800), 0, 0, INTER_CUBIC);
+	//imshow("img", img);
 	CRect rect;
 	GetDlgItem(IDC_PIC_RIGHT)->GetClientRect(&rect);
 	CDC* pDC;
 	pDC = GetDlgItem(IDC_PIC_RIGHT)->GetDC();
 	DisplayImage(pDC, rect, outimg);
+	m_imgSave = outimg;
 }
 
-void CCalibrationMFCDlg::UndistortImg(float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height)
+void CCalibrationMFCDlg::UndistortImg(float k0, float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height)
 {
 	int xc = width / 2, yc = height / 2; // 중심좌표
 	for (int y = 0; y < height; y++)
@@ -217,7 +235,7 @@ void CCalibrationMFCDlg::UndistortImg(float k1, float k2, float k3, Mat& inImg, 
 			// ------------------------------------------------------------
 			// k1,k2,k3 적용하여 radial distortion을 구현한다.
 			float r = sqrt((float)(y - yc)*(y - yc) / (2 * yc*yc) + (float)(x - xc)*(x - xc) / (2 * xc*xc));
-			float dist = (1 + k1 * r*r + k2 * r*r*r*r + k3 * r*r*r*r*r*r);
+			float dist = (k0 + k1 * r + k2 * r*r + k3 * r*r*r);
 			float f_yu = (y - yc) * dist + yc; // 보정된 좌표 yu
 			float f_xu = (x - xc) * dist + xc; // 보정된 좌표 xu
 
@@ -245,12 +263,48 @@ void CCalibrationMFCDlg::UndistortImg(float k1, float k2, float k3, Mat& inImg, 
 				outImg.data[y*width + x] = newValue;
 			}
 		}
-	m_imgSave = outImg;
-	cout << "cols : " << m_imgLoad.cols << "/ " << outImg.cols << endl;
-	cout << "rows : " << m_imgLoad.rows << "/ " << outImg.rows << endl;
-	cout << "type : " << m_imgLoad.type() << "/ " << outImg.type() << endl;
 }
 
+void CCalibrationMFCDlg::DistortImg(float k0, float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height)
+{
+	int xc = width / 2, yc = height / 2; // 중심좌표
+	for (int y = 0; y < height; y++)
+		for (int x = 0; x < width; x++)
+		{
+			// ------------------------------------------------------------
+			// k1,k2,k3 적용하여 radial distortion을 구현한다.
+			float r = sqrt((float)(y - yc)*(y - yc) / (2 * yc*yc) + (float)(x - xc)*(x - xc) / (2 * xc*xc));
+			float dist = (k0 + k1 * r*r + k2 * r*r*r*r + k3 * r*r*r*r*r*r);
+			float f_yu = (y - yc) * dist + yc; // 보정된 좌표 yu
+			float f_xu = (x - xc) * dist + xc; // 보정된 좌표 xu
+
+			// ------------------------------------------------------------
+			// 양선형 보간법:  변환된 값을 구한다.
+			int i_yu = (int)floor(f_yu); //예: floor(2.8)=2.0
+			int i_xu = (int)floor(f_xu);
+			float dy = f_yu - i_yu; // beta value
+			float dx = f_xu - i_xu; // alpha value
+
+			//원이미지의 범위를 벗어나는 경우 0값 할당 
+			if (i_yu<0 || i_yu>height - 1 || i_xu<0 || i_xu>width - 1) {
+				outImg.data[y*width + x] = 128;
+				//cout << 1 << endl;
+			}
+			//원 이미지의 범위 내에 존재할 경우 양선형 보간 수행 
+			else {
+				//cout << 0 << endl;
+				float I1, I2, I3, I4;
+				BYTE newValue;
+				I1 = (float)inImg.data[i_yu*width + i_xu]; // (x, y)
+				I2 = (float)inImg.data[i_yu*width + (i_xu + 1)]; // (x, y+1)
+				I3 = (float)inImg.data[(i_yu + 1)*width + i_xu]; // (x+1, y)
+				I4 = (float)inImg.data[(i_yu + 1)*width + (i_xu + 1)]; // (x+1, y+1)
+				//양선형 보간을 통한 새로운 밝기값 계산
+				newValue = (BYTE)(I1*(1 - dx)*(1 - dy) + I2 * dx*(1 - dy) + I3 * (1 - dx)*dy + I4 * dx*dy);
+				outImg.data[y*width + x] = newValue;
+			}
+		}
+}
 void  CCalibrationMFCDlg::FillBitmapInfo(BITMAPINFO* bmi, int width, int height, int bpp, int origin)
 {
 	assert(bmi&&width >= 0 && height >= 0 && (bpp == 8 || bpp == 24 || bpp == 32));
@@ -299,5 +353,185 @@ void CCalibrationMFCDlg::OnBnClickedButtonSave()
 		AfxMessageBox(_T("no data!"), MB_OK);
 		return;
 	}
-	imwrite((string)m_strPath + to_string(1), m_imgSave);
+	CStringA strPath = m_strPath;
+	strPath.Insert(strPath.GetLength() - 4, "1");
+	cout << (string)strPath << endl;
+	imwrite((string)strPath, m_imgSave);
+}
+
+
+void CCalibrationMFCDlg::OnBnClickedButtonCalib()
+{
+	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
+	CString str = _T("All files(*.*)|*.*|"); // 모든 파일 표시
+// _T("Excel 파일 (*.xls, *.xlsx) |*.xls; *.xlsx|"); 와 같이 확장자를 제한하여 표시할 수 있음
+	CFileDialog dlg(TRUE, _T("*.dat"), NULL, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, str, this);
+	CString strC;
+	if (dlg.DoModal() == IDOK)
+	{
+		strC = dlg.GetPathName();
+		CStringA strA(strC);
+
+		m_strPath = strA;
+		Mat mat;
+		m_imgBoard = imread((string)strA, COLOR_BGR2GRAY);
+		if (m_imgBoard.data == NULL)
+		{
+			cout << "no data!!" << endl;
+			CV_Assert(m_imgBoard.data);
+		}
+		m_imgBoard.convertTo(m_imgBoard, CV_8U);
+		CRect rect;
+		GetDlgItem(IDC_PIC_RIGHT)->GetClientRect(&rect);
+		CDC* pDC;
+		pDC = GetDlgItem(IDC_PIC_RIGHT)->GetDC();
+		DisplayImage(pDC, rect, m_imgBoard);
+	}
+	else
+		return;
+	//===중심점 찾기
+	Mat th_imgD, th_imgB;
+	threshold(m_imgLoad, th_imgD, 120, 255, THRESH_BINARY);
+	threshold(m_imgBoard, th_imgB, 120, 255, THRESH_BINARY);
+	//imshow("th_img", th_img);
+	vector<vector<Point>> ptContoursD;
+	vector<vector<Point>> ptContoursB;
+
+	findContours(~th_imgD, ptContoursD, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+	findContours(~th_imgB, ptContoursB, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+	cvtColor(th_imgD, th_imgD, COLOR_GRAY2BGR);
+	th_imgD.convertTo(th_imgD, CV_8UC3);
+	cvtColor(th_imgB, th_imgB, COLOR_GRAY2BGR);
+	th_imgB.convertTo(th_imgB, CV_8UC3);
+	//cout << ptContours.size() << endl;
+
+	vector<RotatedRect> rotRectArrD;
+	vector<RotatedRect> rotRectArrB;
+	for (int i = 0; i < (int)ptContoursD.size(); i++)
+	{
+		RotatedRect rot_rect = minAreaRect(ptContoursD[i]);
+		if ((m_imgLoad.cols / 2 - 10) < rot_rect.center.x && rot_rect.center.x < (m_imgLoad.cols / 2 + 10) &&
+			(m_imgLoad.rows / 2 - 10) < rot_rect.center.y && rot_rect.center.y < (m_imgLoad.rows / 2 + 10))
+			continue;
+		rotRectArrD.push_back(rot_rect);
+	}cout << rotRectArrD.size() << endl;
+
+	for (int i = 0; i < (int)ptContoursB.size(); i++)
+	{
+		RotatedRect rot_rect = minAreaRect(ptContoursB[i]);
+		if ((m_imgBoard.cols / 2 - 10) < rot_rect.center.x && rot_rect.center.x < (m_imgBoard.cols / 2 + 10) &&
+			(m_imgBoard.rows / 2 - 10) < rot_rect.center.y && rot_rect.center.y < (m_imgBoard.rows / 2 + 10))
+			continue;
+		rotRectArrB.push_back(rot_rect);
+	}cout << rotRectArrB.size() << endl;
+
+	int c = 0;
+	for (int i = 0; i < (int)rotRectArrD.size(); i++)
+	{
+		c += (i * (255 / 64));
+		circle(th_imgD, rotRectArrD[i].center, 2, Scalar(c, 0, 255 - i * (255 / 64)), 2);
+	}
+	c = 0;
+	for (int i = 0; i < (int)rotRectArrB.size(); i++)
+	{
+		c += (i * (255 / 64));
+		circle(th_imgB, rotRectArrB[i].center, 2, Scalar(c, 0, 255 - i * (255 / 64)), 2);
+	}
+
+	CRect rectD;
+	GetDlgItem(IDC_PIC_LEFT)->GetClientRect(&rectD);
+	CDC* pDCd;
+	pDCd = GetDlgItem(IDC_PIC_LEFT)->GetDC();
+	DisplayImage(pDCd, rectD, th_imgD);
+	CRect rectB;
+	GetDlgItem(IDC_PIC_RIGHT)->GetClientRect(&rectB);
+	CDC* pDCb;
+	pDCb = GetDlgItem(IDC_PIC_RIGHT)->GetDC();
+	DisplayImage(pDCb, rectB, th_imgB);
+
+	//==============
+	//=============================
+	double sumR6 = 0, sumR5 = 0, sumR4 = 0, sumR3 = 0, sumR2 = 0, sumR = 0;
+	double sumR3L = 0, sumR2L = 0, sumRL = 0, sumL = 0;
+	double sum = rotRectArrD.size();
+	int xc = m_imgLoad.cols / 2;
+	int yc = m_imgLoad.rows / 2;
+
+	for (int i = 0; i < rotRectArrD.size(); i++)
+	{
+		float r = sqrt((float)(rotRectArrD[i].center.y - yc)*(rotRectArrD[i].center.y - yc) / (2 * yc*yc)
+			+ (float)(rotRectArrD[i].center.x - xc)*(rotRectArrD[i].center.x - xc) / (2 * xc*xc));
+
+		sumR6 += pow(r, 6);
+		sumR5 += pow(r, 5);
+		sumR4 += pow(r, 4);
+		sumR3 += pow(r, 3);
+		sumR2 += pow(r, 2);
+		sumR += r;
+
+		sumR3L += pow(r, 3)*((rotRectArrB[i].center.x - xc) / (rotRectArrD[i].center.x - xc));
+		sumR2L += pow(r, 2)*((rotRectArrB[i].center.x - xc) / (rotRectArrD[i].center.x - xc));
+		sumRL += r * ((rotRectArrB[i].center.x - xc) / (rotRectArrD[i].center.x - xc));
+		sumL += ((rotRectArrB[i].center.x - xc) / (rotRectArrD[i].center.x - xc));
+	}
+
+	Mat A = (Mat_<float>(4, 4) <<
+		sum, sumR, sumR2, sumR3,
+		sumR, sumR2, sumR3, sumR4,
+		sumR2, sumR3, sumR4, sumR5,
+		sumR3, sumR4, sumR5, sumR6);
+
+	Mat B = (Mat_<float>(4, 1) <<
+		sumL,
+		sumRL,
+		sumR2L,
+		sumR3L);
+
+	// declare a vector for results
+	Mat abc;
+	// solve the linear system
+	solve(A, B, abc); // (input Array, input Array, output Array)
+	
+//=============================
+//=============================
+	CString str0, str1, str2, str3;
+
+	str0.Format(_T("%.2f"), abc.at<float>(0, 0));
+	str1.Format(_T("%.2f"), abc.at<float>(1, 0));
+	str2.Format(_T("%.2f"), abc.at<float>(2, 0));
+	str3.Format(_T("%.2f"), abc.at<float>(3, 0));
+	SetDlgItemText(IDC_EDIT_K0, str0);
+	SetDlgItemText(IDC_EDIT_K1, str1);
+	SetDlgItemText(IDC_EDIT_K2, str2);
+	SetDlgItemText(IDC_EDIT_K3, str3);
+	cout << abc << endl;
+	cout <<"cols : "<<abc.cols << endl;
+	cout <<"rows : "<<abc.rows << endl;
+	cout <<"type : "<<abc.type() << endl;
+}
+
+
+void CCalibrationMFCDlg::OnBnClickedButtonUndist()
+{
+	Mat outimg(m_imgLoad.rows, m_imgLoad.cols, CV_8UC1, Scalar(0));
+	CString sK0, sK1, sK2, sK3;
+	float fK0, fK1, fK2, fK3;
+	GetDlgItemText(IDC_EDIT_K0, sK0);
+	GetDlgItemText(IDC_EDIT_K1, sK1);
+	GetDlgItemText(IDC_EDIT_K2, sK2);
+	GetDlgItemText(IDC_EDIT_K3, sK3);
+	CStringA aK0(sK0), aK1(sK1), aK2(sK2), aK3(sK3);
+	fK0 = (float)atof(aK0);
+	fK1 = (float)atof(aK1);
+	fK2 = (float)atof(aK2);
+	fK3 = (float)atof(aK3);
+	UndistortImg(fK0, fK1, fK2, fK3, m_imgLoad, outimg, m_imgLoad.cols, m_imgLoad.rows);
+	CRect rect;
+	GetDlgItem(IDC_PIC_RIGHT)->GetClientRect(&rect);
+	CDC* pDC;
+	pDC = GetDlgItem(IDC_PIC_RIGHT)->GetDC();
+	DisplayImage(pDC, rect, outimg);
+	m_imgSave = outimg;
+
+	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
 }

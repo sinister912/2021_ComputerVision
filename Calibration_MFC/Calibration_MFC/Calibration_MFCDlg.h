@@ -34,12 +34,15 @@ protected:
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
 public:
-	Mat m_imgLoad, m_imgSave;
+	Mat m_imgLoad, m_imgSave, m_imgBoard;
 	CStringA m_strPath;
 	afx_msg void OnBnClickedButtonLoad();
 	afx_msg void OnBnClickedButtonDist();
-	void CCalibrationMFCDlg::UndistortImg(float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height);
+	void CCalibrationMFCDlg::UndistortImg(float k0, float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height);
+	void CCalibrationMFCDlg::DistortImg(float k0, float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height);
 	void CCalibrationMFCDlg::FillBitmapInfo(BITMAPINFO* bmi, int width, int height, int bpp, int origin);
 	void CCalibrationMFCDlg::DisplayImage(CDC* pDC, CRect rect, Mat& srcimg);
 	afx_msg void OnBnClickedButtonSave();
+	afx_msg void OnBnClickedButtonCalib();
+	afx_msg void OnBnClickedButtonUndist();
 };
