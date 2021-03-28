@@ -167,7 +167,8 @@ void CCalibrationMFCDlg::OnBnClickedButtonLoad()
 	if (dlg.DoModal() == IDOK)
 	{
 		strC = dlg.GetPathName();
-		CStringA strA(strC);
+		CStringA strA(strC);	
+		m_strPath = strA;
 		Mat mat;
 		m_imgLoad = imread((string)strA, COLOR_BGR2GRAY);
 		if (m_imgLoad.data == NULL)
@@ -294,6 +295,9 @@ void CCalibrationMFCDlg::DisplayImage(CDC* pDC, CRect rect, Mat& srcimg)
 void CCalibrationMFCDlg::OnBnClickedButtonSave()
 {
 	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
-	cout << "test" << endl;
-
+	if (m_imgSave.data == NULL) {
+		AfxMessageBox(_T("no data!"), MB_OK);
+		return;
+	}
+	imwrite((string)m_strPath + to_string(1), m_imgSave);
 }

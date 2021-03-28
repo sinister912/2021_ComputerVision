@@ -35,6 +35,7 @@ protected:
 	DECLARE_MESSAGE_MAP()
 public:
 	Mat m_imgLoad, m_imgSave;
+	CStringA m_strPath;
 	afx_msg void OnBnClickedButtonLoad();
 	afx_msg void OnBnClickedButtonDist();
 	void CCalibrationMFCDlg::UndistortImg(float k1, float k2, float k3, Mat& inImg, Mat& outImg, int width, int height);
